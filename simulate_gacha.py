@@ -70,6 +70,7 @@ def simulate_free_pull(gacha_state, pool_state):
     # 2. 不增加保底计数
     # 3. 出货也不重置保底 (题目: "不影响任何计数")
     # 4. 出货也不消耗/享受大保底 (纯独立事件)
+    # 5. 但如果出了 UP，池子目标视为达成 (用户确认)
     
     prob = 0.008
     
@@ -86,13 +87,8 @@ def simulate_free_pull(gacha_state, pool_state):
             
         if is_up:
             gacha_state.total_up_5_stars += 1
-            # 不更新 pool.up_obtained_in_pool (因为不影响计数? 或者影响?)
-            # 题目说 "119抽若都没有获取up... 120抽必定出"
-            # 如果免费十连出了 UP，是否还要 120 强娶？
-            # "不影响任何计数" -> 可能意味着这单纯是送的，不以此判断 120 规则？
-            # 但既然已经拿到了 UP，通常逻辑是该池子目标达成。
-            # 为了严谨，假设它单纯是“额外掉落”，不影响池子状态。
-            pass
+            # 用户确认: 出了 UP 就算目标达成，触发停止条件
+            pool_state.up_obtained_in_pool = True
         else:
             pass
     else:
@@ -147,6 +143,17 @@ def run_strategy(strategy_type, total_resources, n_sims=1):
             padding_success = False 
 
             while True:
+                # ========== 第一步: 先领取奖励 ==========
+                # 30 抽奖励: 赌狗十连
+                if pool.pulls_in_pool == 30 and not pool.bonus_30_claimed:
+                    pool.bonus_30_claimed = True
+                    for _ in range(10): simulate_free_pull(state, pool)
+                
+                # 60 抽奖励: 标记下个池子券
+                if pool.pulls_in_pool == 60 and not pool.bonus_60_claimed:
+                    pool.bonus_60_claimed = True
+                
+                # ========== 第二步: 判断停止条件 ==========
                 should_stop_pool = False
                 
                 if pool_strategy == "pad_30_fixed":
@@ -155,7 +162,6 @@ def run_strategy(strategy_type, total_resources, n_sims=1):
                 elif pool_strategy == "pad_60_fixed":
                     if pool.pulls_in_pool >= 60: should_stop_pool = True
                     
-                # 新增 fixed_60 逻辑: 雷打不动 60 抽
                 elif pool_strategy == "fixed_60":
                     if pool.pulls_in_pool >= 60: should_stop_pool = True
                         
@@ -182,15 +188,7 @@ def run_strategy(strategy_type, total_resources, n_sims=1):
                 if should_stop_pool or (resources_left <= 0 and next_pool_coupon <= 0):
                     break
                     
-                if pool.pulls_in_pool == 30 and not pool.bonus_30_claimed:
-                    pool.bonus_30_claimed = True
-                    for _ in range(10): simulate_free_pull(state, pool)
-                    continue 
-
-                if pool.pulls_in_pool == 60 and not pool.bonus_60_claimed:
-                    pool.bonus_60_claimed = True
-                    pass 
-
+                # ========== 第三步: 消耗资源并抽卡 ==========
                 if next_pool_coupon > 0: next_pool_coupon -= 1
                 else:
                     if resources_left > 0: 
@@ -247,3 +245,4 @@ if __name__ == "__main__":
         print(f"  平均消耗资源/UP五星:  {avg_cost_per_up:.2f} 券")
         print(f"  平均总抽数:           {avg_pulls:.2f} 抽")
         print("-" * 40)
+
